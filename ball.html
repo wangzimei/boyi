@@ -1,0 +1,199 @@
+<!doctype html>
+<meta charset=utf-8>
+<style>
+    body {
+        margin: 0;
+    }
+
+    canvas {
+        background-color: darkseagreen;
+        display: block;
+    }
+</style>
+<canvas></canvas>
+<script>
+    //
+    // 这里没有力 f 只有加速度 a, 因为不想再假设小球的质量
+    // 速度向量 v 包含值和方向两个量, 这里不使用这俩量, 使用 v 在坐标轴上的投影 vx 和 vy
+
+    var A_FRICTION = 226, // 摩擦造成的加速度
+        A_FORCE_MAX = A_FRICTION * 50, // 鼠标中心点造成的加速度
+        R_BALL = 18, // 球的半径
+        R_FORCE_CIRCLE = 90, // 以鼠标为中心圆的半径
+        RATIO_COLLIDE = .72, // 碰撞时保留这个比例的速度
+        V_INIT = 100; // 这个数乘以一个小数得到初速
+
+    var canvas = document.querySelector("canvas"),
+        cc = canvas.getContext("2d"),
+        ch = canvas.height = innerHeight,
+        cw = canvas.width = innerWidth,
+        gBall = { vx: 0, vy: 0, x: 0, y: 0 },
+        gForce = { d: 0, dx: 0, dy: 0 },
+        gMouse = { x: 0, y: 0, in: false },
+        gTimeLastFrame = performance.now(),
+        gTimeDiff;
+
+    setupInput();
+    initBallPos();
+    drawFrame(gTimeLastFrame);
+
+    //
+    // init
+
+    function initBallPos() {
+        // 从 [-2, -1) 或者 [1, 2) 中取值
+        var vx = (Math.random() + (Math.random() > .5 ? 1 : -2)) * V_INIT,
+            vy = (Math.random() + (Math.random() > .5 ? 1 : -2)) * V_INIT,
+            // 刷到中间的矩形内, 宽高是画布的一半
+            x = Math.random() * (cw / 2 - 2 * R_BALL) + cw / 4 + R_BALL,
+            y = Math.random() * (ch / 2 - 2 * R_BALL) + ch / 4 + R_BALL;
+
+        gBall = { vx, vy, x, y };
+        gForce.d = Math.max(ch, cw); // 先给一个大值
+    }
+
+    //
+    // draw
+
+    function drawFrame(t) {
+        gTimeDiff = (t - gTimeLastFrame) / 1000; // t 的单位是毫秒
+        gTimeLastFrame = t;
+
+        // clear canvas
+
+        cc.clearRect(0, 0, cw, ch);
+
+        // traverse objects
+
+        calcForce();
+        gMouse.in && drawForce();
+        drawBall();
+
+        // next frame
+
+        requestAnimationFrame(drawFrame);
+    }
+
+    function calcForce() {
+        var dx, dy;
+
+        if (gMouse.in) {
+            dx = gMouse.x - gBall.x;
+            dy = gMouse.y - gBall.y;
+        } else
+            dx = dy = Math.max(cw, ch);
+
+        gForce.d = Math.sqrt(dx ** 2 + dy ** 2);
+        gForce.dx = dx;
+        gForce.dy = dy;
+    }
+
+    function drawBall() {
+        var t = gTimeDiff,
+            x = gBall.x,
+            y = gBall.y,
+            vx0 = gBall.vx,
+            vy0 = gBall.vy,
+            vx1, vy1,
+            af, θ,
+            ax, ay, dx, dy;
+
+        // 如果球在力范围内
+        if (gForce.d < R_FORCE_CIRCLE) {
+            θ = Math.atan2(-gForce.dy, -gForce.dx);
+            af = A_FORCE_MAX * (R_FORCE_CIRCLE - gForce.d) / R_FORCE_CIRCLE; // 离圆心越远加速度越小
+
+            if (af > A_FRICTION) {
+                ax = (af - A_FRICTION) * Math.cos(θ);
+                ay = (af - A_FRICTION) * Math.sin(θ);
+            } else
+                ax = ay = 0;
+        } else if (vx0 || vy0) {
+            θ = Math.atan2(vy0, vx0);
+            ax = -A_FRICTION * Math.cos(θ);
+            ay = -A_FRICTION * Math.sin(θ);
+        } else
+            ax = ay = 0;
+
+        dx = vx0 * t + ax * t * t / 2;
+        dy = vy0 * t + ay * t * t / 2;
+        x += dx;
+        y += dy;
+        vx1 = vx0 + ax * t;
+        vy1 = vy0 + ay * t;
+
+        // 速度太小时直接置成 0
+        Math.abs(vx1) < .1 && (vx1 = 0);
+        Math.abs(vy1) < .1 && (vy1 = 0);
+
+        // 如果超出了边界
+
+        if (x < R_BALL) {
+            x = R_BALL * 2 - x;
+            vx1 = -vx1 * RATIO_COLLIDE;
+        } else if (x > cw - R_BALL) {
+            x = (cw - R_BALL) * 2 - x;
+            vx1 = -vx1 * RATIO_COLLIDE;
+        }
+
+        if (y < R_BALL) {
+            y = R_BALL * 2 - y;
+            vy1 = -vy1 * RATIO_COLLIDE;
+        } else if (y > ch - R_BALL) {
+            y = (ch - R_BALL) * 2 - y;
+            vy1 = -vy1 * RATIO_COLLIDE;
+        }
+
+        cc.beginPath();
+        cc.arc(x, y, R_BALL, 0, 2 * Math.PI);
+        cc.stroke();
+
+        // 更新
+
+        gBall.vx = vx1;
+        gBall.vy = vy1;
+        gBall.x = x;
+        gBall.y = y;
+    }
+
+    //
+    // setupInput
+    // expected function that will be called in drawing process
+    // - drawForce()
+    //
+    // https://www.reddit.com/r/javascript/comments/3sed52/is_it_possible_to_reduce_input_lag_to_almost_0ms/
+
+    function setupInput() {
+        canvas.addEventListener("mousemove", onMouseMoveCanvas);
+        canvas.addEventListener("mouseleave", onMouseLeaveCanvas);
+    }
+
+    function onMouseMoveCanvas(e) {
+        gMouse = { x: e.clientX, y: e.clientY, in: true };
+    }
+
+    function onMouseLeaveCanvas() {
+        gMouse.in = false;
+    }
+
+    function drawForce() {
+        var r = R_FORCE_CIRCLE,
+            d = gForce.d, dx = gForce.dx, dy = gForce.dy,
+            scale = r > d ? 1 : r / d,
+            gradient;
+
+        // 以鼠标为中心的一个圆圈, 表示力
+        gradient = cc.createRadialGradient(gMouse.x, gMouse.y, 0, gMouse.x, gMouse.y, r);
+        gradient.addColorStop(0, " rgb( 255, 69, 0)");
+        gradient.addColorStop(.6, "rgba(255, 69, 0, .4)");
+        gradient.addColorStop(1, " rgba(255, 69, 0,  0)");
+        cc.fillStyle = gradient;
+        cc.fillRect(gMouse.x - r, gMouse.y - r, 2 * r, 2 * r);
+
+        // 鼠标到小球中心的连线, 长度不超出鼠标那个圆圈
+        cc.beginPath();
+        cc.moveTo(gMouse.x, gMouse.y);
+        cc.lineTo(gMouse.x - dx * scale, gMouse.y - dy * scale);
+        cc.stroke();
+    }
+</script>
