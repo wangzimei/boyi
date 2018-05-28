@@ -17,28 +17,39 @@
     // 速度向量 v 包含值和方向两个量, 这里不使用这俩量, 使用 v 在坐标轴上的投影 vx 和 vy
 
     var A_FRICTION = 226, // 摩擦造成的加速度
-        A_FORCE_MAX = A_FRICTION * 50, // 鼠标中心点造成的加速度
         R_BALL = 18, // 球的半径
         R_FORCE_CIRCLE = 90, // 以鼠标为中心圆的半径
         RATIO_COLLIDE = .72, // 碰撞时保留这个比例的速度
-        V_INIT = 100; // 这个数乘以一个小数得到初速
+        V_INIT = 100, // 这个数乘以一个小数得到初速
+        // 下面的常量依赖上面的常量
+        A_FORCE_MAX = 50 * A_FRICTION, // 鼠标中心点造成的加速度
+        DR_HOLE = R_BALL; // 洞的半径比球大这么多
 
     var canvas = document.querySelector("canvas"),
         cc = canvas.getContext("2d"),
         ch = canvas.height = innerHeight,
         cw = canvas.width = innerWidth,
+        finished,
         gBall = { vx: 0, vy: 0, x: 0, y: 0 },
         gForce = { d: 0, dx: 0, dy: 0 },
+        gHole = { x: 0, y: 0 },
         gMouse = { x: 0, y: 0, in: false },
         gTimeLastFrame = performance.now(),
         gTimeDiff;
 
     setupInput();
-    initBallPos();
+    reset();
     drawFrame(gTimeLastFrame);
 
     //
     // init
+
+    function reset() {
+        finished = false;
+
+        initBallPos();
+        initHolePos();
+    }
 
     function initBallPos() {
         // 从 [-2, -1) 或者 [1, 2) 中取值
@@ -50,6 +61,13 @@
 
         gBall = { vx, vy, x, y };
         gForce.d = Math.max(ch, cw); // 先给一个大值
+    }
+
+    function initHolePos() {
+        var r = R_BALL + DR_HOLE;
+
+        gHole.x = Math.random() * (cw - 2 * r) + r;
+        gHole.y = Math.random() * (ch - 2 * r) + r;
     }
 
     //
@@ -67,7 +85,8 @@
 
         calcForce();
         gMouse.in && drawForce();
-        drawBall();
+        drawHole();
+        finished || drawBall();
 
         // next frame
 
@@ -86,6 +105,17 @@
         gForce.d = Math.sqrt(dx ** 2 + dy ** 2);
         gForce.dx = dx;
         gForce.dy = dy;
+    }
+
+    function drawHole() {
+        cc.beginPath();
+        cc.arc(gHole.x, gHole.y, R_BALL + DR_HOLE, 0, 2 * Math.PI);
+        cc.fillStyle = "black";
+        cc.strokeStyle = "white";
+        cc.lineWidth = 1;
+        cc.fill();
+        cc.stroke();
+        cc.strokeStyle = "black";
     }
 
     function drawBall() {
@@ -144,6 +174,14 @@
             vy1 = -vy1 * RATIO_COLLIDE;
         }
 
+        // 如果进洞
+        if (Math.abs(x - gHole.x) < R_BALL + DR_HOLE && Math.abs(y - gHole.y) < R_BALL + DR_HOLE) {
+            x = gHole.x;
+            y = gHole.y;
+            vx1 = vy1 = 0;
+            finished = true;
+        }
+
         cc.beginPath();
         cc.arc(x, y, R_BALL, 0, 2 * Math.PI);
         cc.stroke();
@@ -154,6 +192,13 @@
         gBall.vy = vy1;
         gBall.x = x;
         gBall.y = y;
+
+        // 过关
+
+        finished && setTimeout(function () {
+            alert(111);
+            reset();
+        });
     }
 
     //
